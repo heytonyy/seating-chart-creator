@@ -88,6 +88,24 @@ Persistence: `localStorage` key `seating-chart-creator:v1`. A migration in `stor
 - **CSS variables** for the light/dark palette, no styling framework
 - **`localStorage`** for persistence — no backend
 
+## Deployment (Heroku from GitHub)
+
+The repo is set up for Heroku's auto-detected Node.js buildpack:
+
+- `Procfile` — runs `npm start` on the web dyno
+- `package.json` `engines.node` pins Node 20
+- `heroku-postbuild` runs `npm run build` after install (so devDeps like `vite` and `typescript` are still available to build); Heroku then prunes devDeps before booting the dyno
+- `npm start` runs `serve -s dist -l $PORT` to serve the built static files with SPA fallback
+
+To deploy:
+
+1. Push this repo to GitHub.
+2. In the Heroku Dashboard, create a new app → **Deploy** tab → **Deployment method: GitHub** → connect the repo.
+3. Enable **Automatic deploys** from `main` (or click **Deploy Branch** for a one-off).
+4. Heroku detects the Node buildpack from `package.json`, runs install + `heroku-postbuild`, then boots `web: npm start`. No buildpack or config var setup is required.
+
+No environment variables are needed — all state lives in the user's browser (`localStorage`).
+
 ## Roadmap
 
 - **Story 1** — MVP, dark mode, CSV name formatting
