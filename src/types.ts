@@ -11,12 +11,25 @@ export interface Layout {
   frontOfRoom: Orientation;
 }
 
+/** Story 3: fixed accommodation vocabulary. */
+export type AccommodationId = 'iep' | '504' | 'behavior' | 'preferential';
+
 export interface Student {
   id: string;
   firstName: string;
   lastName: string;
-  /** Base64 data URL of a resized JPEG/PNG (200×200, ~15–25 KB). Absent until the teacher uploads. */
+  /** Base64 data URL of a resized JPEG/PNG (200×200). Absent until uploaded. */
   photoDataUrl?: string;
+  /** Story 3: accommodation tags. [] when none. */
+  accommodations: AccommodationId[];
+  /** Story 3: private teacher notes. '' when none. */
+  notes: string;
+}
+
+/** Story 3: symmetric pair flag. studentA < studentB (string order). */
+export interface PairFlag {
+  studentA: string;
+  studentB: string;
 }
 
 export interface Period {
@@ -29,19 +42,16 @@ export interface Period {
   /** Snapshot of assignments before the most recent destructive action (shuffle/reset). */
   undoSnapshot: Record<string, string> | null;
   updatedAt: number;
-  /** Teacher's display name shown in the sub-mode header. */
   teacherName?: string;
-  /** Room number shown in the sub-mode header. */
   roomNumber?: string;
-  /** Class-level notes shown to the substitute in Sub mode and on print. */
   subNotes?: string;
+  /** Story 3: do-not-seat-together pairs. */
+  pairFlags: PairFlag[];
 }
 
 export interface AppState {
   periods: Period[];
   activePeriodId: string | null;
-  /** Which top-level view is active. Defaults to 'editor'. */
   viewMode: 'editor' | 'sub';
-  /** Whether photos are rendered (true) or replaced by initials avatars (false). Persisted. */
   photosEnabled: boolean;
 }

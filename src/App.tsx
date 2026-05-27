@@ -10,10 +10,27 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { restrictToParentElement } from '@dnd-kit/modifiers';
-import type { AppState, Orientation, Period, Student } from './types';
+import type { AccommodationId, AppState, Orientation, Period, Student } from './types';
 import { genId, loadState, saveState } from './storage';
-import { emptyState, findPeriod, fullName, newPeriod, shuffleAssignments, updatePeriod, type ParsedStudent } from './state';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SNAP, PRESETS, SEAT_HEIGHT, SEAT_WIDTH, type PresetKey } from './layouts';
+import {
+  emptyState,
+  findPeriod,
+  fullName,
+  newPeriod,
+  shuffleAssignments,
+  updatePeriod,
+  type ParsedStudent,
+} from './state';
+import {
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  GRID_SNAP,
+  PRESETS,
+  SEAT_HEIGHT,
+  SEAT_WIDTH,
+  type PresetKey,
+} from './layouts';
+import { findAdjacentViolations, violationKey } from './adjacency';
 import { PeriodTabs } from './components/PeriodTabs';
 import { RosterPanel } from './components/RosterPanel';
 import { SeatingCanvas } from './components/SeatingCanvas';
@@ -22,6 +39,8 @@ import { RosterImportModal } from './components/RosterImportModal';
 import { SaveIndicator } from './components/SaveIndicator';
 import { ThemeToggle } from './components/ThemeToggle';
 import { SubModeView } from './components/SubModeView';
+import { StudentDetailsPanel } from './components/StudentDetailsPanel';
+import { AdjacencyBanner } from './components/AdjacencyBanner';
 import { applyTheme, getInitialTheme, getStoredTheme, storeTheme, type Theme } from './theme';
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
@@ -30,9 +49,7 @@ export default function App() {
   const [state, setState] = useState<AppState>(() => {
     const loaded = loadState();
     if (loaded) return loaded;
-    const fresh = emptyState();
-    // Ensure fresh state has Story-2 fields.
-    return { ...fresh, viewMode: 'editor', photosEnabled: true };
+    return { ...emptyState(), viewMode: 'editor', photosEnabled: true };
   });
   const [editMode, setEditMode] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -41,13 +58,21 @@ export default function App() {
   const [lastSavedAt, setLastSavedAt] = useState(0);
   const [saveError, setSaveError] = useState(false);
   const saveTimerRef = useRef<number | null>(null);
+
+  // ── Story 3: ephemeral UI state (never persisted) ──────────────────────
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  /** Private view hides all flag data; resets on page reload. */
+  const [privateView, setPrivateView] = useState(false);
+  /** Key of violations the teacher has dismissed this session. */
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+
   const [theme, setTheme] = useState<Theme>(() => {
     const t = getInitialTheme();
     applyTheme(t);
     return t;
   });
 
-  // Follow system changes only while the user hasn't set an override.
+  // Follow system dark/light changes when no override is stored.
   useEffect(() => {
     if (!window.matchMedia) return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -68,7 +93,7 @@ export default function App() {
     storeTheme(next);
   }
 
-  // Auto-save: debounce all state changes.
+  // ── Auto-save ──────────────────────────────────────────────────────────
   useEffect(() => {
     setSavePending(true);
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
@@ -87,11 +112,21 @@ export default function App() {
     };
   }, [state]);
 
+  // ── Esc key: close details panel ──────────────────────────────────────
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (e.key === 'Escape' && selectedStudentId) setSelectedStudentId(null);
+    }
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedStudentId]);
+
+  // ── Derived state ──────────────────────────────────────────────────────
   const period = findPeriod(state);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor)
+    useSensor(KeyboardSensor),
   );
 
   const studentById = useMemo(() => {
@@ -106,25 +141,100 @@ export default function App() {
     return period.roster.filter((s) => !seated.has(s.id));
   }, [period]);
 
+  // Auto-deselect if selected student is no longer seated
+  useEffect(() => {
+    if (!selectedStudentId || !period) return;
+    const isSeated = Object.values(period.assignments).includes(selectedStudentId);
+    if (!isSeated) setSelectedStudentId(null);
+  }, [period, selectedStudentId]);
+
+  // ── Adjacency violations ───────────────────────────────────────────────
+  const violations = useMemo(() => {
+    if (!period) return [];
+    return findAdjacentViolations(period);
+  }, [period]);
+
+  const currentViolationKey = violations.length > 0 ? violationKey(violations) : null;
+  const viewMode = state.viewMode ?? 'editor';
+  const photosEnabled = state.photosEnabled ?? true;
+  const isSubMode = viewMode === 'sub';
+
+  const showBanner =
+    !isSubMode &&
+    !privateView &&
+    violations.length > 0 &&
+    currentViolationKey !== dismissedKey;
+
+  // ── Helpers ────────────────────────────────────────────────────────────
   function mutatePeriod(mut: (p: Period) => Period) {
     if (!period) return;
     setState((s) => updatePeriod(s, period.id, mut));
   }
 
-  // ── View mode ─────────────────────────────────────────────────────────────
-  const viewMode = state.viewMode ?? 'editor';
-  const photosEnabled = state.photosEnabled ?? true;
-
+  // ── View mode ──────────────────────────────────────────────────────────
   function handleSetViewMode(mode: 'editor' | 'sub') {
     setState((s) => ({ ...s, viewMode: mode }));
-    if (mode === 'editor') setEditMode(false);
+    if (mode === 'sub') {
+      setEditMode(false);
+      setSelectedStudentId(null);
+    }
   }
 
   function handleTogglePhotos() {
     setState((s) => ({ ...s, photosEnabled: !s.photosEnabled }));
   }
 
-  // ── Photo handlers ────────────────────────────────────────────────────────
+  // ── Story 3: selection ────────────────────────────────────────────────
+  function handleSelectStudent(id: string) {
+    setSelectedStudentId((prev) => (prev === id ? null : id));
+  }
+
+  function handleDeselectStudent() {
+    setSelectedStudentId(null);
+  }
+
+  // ── Story 3: accommodations ───────────────────────────────────────────
+  function handleUpdateAccommodations(studentId: string, ids: AccommodationId[]) {
+    if (!period) return;
+    mutatePeriod((p) => ({
+      ...p,
+      roster: p.roster.map((s) => (s.id === studentId ? { ...s, accommodations: ids } : s)),
+    }));
+  }
+
+  // ── Story 3: notes ────────────────────────────────────────────────────
+  function handleUpdateStudentNotes(studentId: string, notes: string) {
+    if (!period) return;
+    mutatePeriod((p) => ({
+      ...p,
+      roster: p.roster.map((s) => (s.id === studentId ? { ...s, notes } : s)),
+    }));
+  }
+
+  // ── Story 3: pair flags ───────────────────────────────────────────────
+  function handleAddPairFlag(idA: string, idB: string) {
+    if (!period) return;
+    const [a, b] = [idA, idB].sort();
+    const exists = (period.pairFlags ?? []).some((f) => f.studentA === a && f.studentB === b);
+    if (exists) return;
+    mutatePeriod((p) => ({
+      ...p,
+      pairFlags: [...(p.pairFlags ?? []), { studentA: a, studentB: b }],
+    }));
+    // Reset dismissed key so banner re-evaluates
+    setDismissedKey(null);
+  }
+
+  function handleRemovePairFlag(idA: string, idB: string) {
+    if (!period) return;
+    const [a, b] = [idA, idB].sort();
+    mutatePeriod((p) => ({
+      ...p,
+      pairFlags: (p.pairFlags ?? []).filter((f) => !(f.studentA === a && f.studentB === b)),
+    }));
+  }
+
+  // ── Photo handlers ────────────────────────────────────────────────────
   function handlePhotoUpload(studentId: string, dataUrl: string) {
     if (!period) return;
     mutatePeriod((p) => ({
@@ -143,7 +253,7 @@ export default function App() {
     }));
   }
 
-  // ── Period metadata ───────────────────────────────────────────────────────
+  // ── Period metadata ───────────────────────────────────────────────────
   function handleUpdateMeta(fields: { teacherName?: string; roomNumber?: string }) {
     if (!period) return;
     mutatePeriod((p) => ({ ...p, ...fields }));
@@ -154,7 +264,7 @@ export default function App() {
     mutatePeriod((p) => ({ ...p, subNotes: notes }));
   }
 
-  // ── Drag & drop ───────────────────────────────────────────────────────────
+  // ── Drag & drop ───────────────────────────────────────────────────────
   function handleDragStart(e: DragStartEvent) {
     const data = e.active.data.current as { type?: string; studentId?: string } | undefined;
     if (data?.type === 'student' && data.studentId) {
@@ -172,7 +282,6 @@ export default function App() {
       | undefined;
     if (!aData) return;
 
-    // Seat repositioning in layout-edit mode.
     if (aData.type === 'seat-move') {
       const seatId = aData.seatId;
       mutatePeriod((p) => {
@@ -184,10 +293,11 @@ export default function App() {
         });
         return { ...p, layout: { ...p.layout, seats } };
       });
+      // Reset dismissed key — seat moved, violations may change
+      setDismissedKey(null);
       return;
     }
 
-    // Student drag.
     if (aData.type === 'student') {
       if (!over) return;
       const oData = over.data.current as
@@ -204,6 +314,7 @@ export default function App() {
           delete next[sourceSeatId];
           return { ...p, assignments: next };
         });
+        setDismissedKey(null);
         return;
       }
 
@@ -215,32 +326,33 @@ export default function App() {
           const displaced = next[targetSeatId];
           next[targetSeatId] = studentId;
           if (sourceSeatId) {
-            if (displaced) {
-              next[sourceSeatId] = displaced;
-            } else {
-              delete next[sourceSeatId];
-            }
+            if (displaced) next[sourceSeatId] = displaced;
+            else delete next[sourceSeatId];
           }
           for (const [sid, stid] of Object.entries(next)) {
             if (sid !== targetSeatId && stid === studentId) delete next[sid];
           }
           return { ...p, assignments: next };
         });
+        setDismissedKey(null);
         return;
       }
     }
   }
 
-  // ── Period management ─────────────────────────────────────────────────────
+  // ── Period management ─────────────────────────────────────────────────
   function handleSelectPeriod(id: string) {
     setState((s) => ({ ...s, activePeriodId: id }));
     setEditMode(false);
+    setSelectedStudentId(null);
+    setDismissedKey(null);
   }
 
   function handleCreatePeriod(name: string) {
     const p = newPeriod(name, 'rows');
     setState((s) => ({ ...s, periods: [...s.periods, p], activePeriodId: p.id }));
     setEditMode(false);
+    setSelectedStudentId(null);
   }
 
   function handleRenamePeriod(id: string, name: string) {
@@ -250,9 +362,9 @@ export default function App() {
   function handleDeletePeriod(id: string) {
     setState((s) => {
       const remaining = s.periods.filter((p) => p.id !== id);
-      const nextActive = remaining[0]?.id ?? null;
-      return { ...s, periods: remaining, activePeriodId: nextActive };
+      return { ...s, periods: remaining, activePeriodId: remaining[0]?.id ?? null };
     });
+    setSelectedStudentId(null);
   }
 
   function handleSaveRoster(parsed: ParsedStudent[]) {
@@ -265,7 +377,14 @@ export default function App() {
       for (const { firstName, lastName } of parsed) {
         const key = fullName({ firstName, lastName }).toLowerCase();
         const existing = byKey.get(key);
-        const student = existing ?? { id: genId('stu'), firstName, lastName };
+        // Preserve existing student (with photo, accommodations, notes) if name matches
+        const student = existing ?? {
+          id: genId('stu'),
+          firstName,
+          lastName,
+          accommodations: [],
+          notes: '',
+        };
         if (seen.has(student.id)) continue;
         seen.add(student.id);
         nextRoster.push(student);
@@ -275,7 +394,11 @@ export default function App() {
       for (const [seatId, stuId] of Object.entries(p.assignments)) {
         if (rosterIds.has(stuId)) nextAssignments[seatId] = stuId;
       }
-      return { ...p, roster: nextRoster, assignments: nextAssignments };
+      // Cascade-delete pair flags for removed students
+      const nextPairFlags = (p.pairFlags ?? []).filter(
+        (f) => rosterIds.has(f.studentA) && rosterIds.has(f.studentB),
+      );
+      return { ...p, roster: nextRoster, assignments: nextAssignments, pairFlags: nextPairFlags };
     });
     setImporting(false);
   }
@@ -283,7 +406,8 @@ export default function App() {
   function handleClearRoster() {
     if (!period) return;
     if (!confirm('Remove all students from this period? This will clear all seat assignments. (You can re-import.)')) return;
-    mutatePeriod((p) => ({ ...p, roster: [], assignments: {}, undoSnapshot: null }));
+    mutatePeriod((p) => ({ ...p, roster: [], assignments: {}, undoSnapshot: null, pairFlags: [] }));
+    setSelectedStudentId(null);
   }
 
   function handleShuffle() {
@@ -293,17 +417,20 @@ export default function App() {
       undoSnapshot: p.assignments,
       assignments: shuffleAssignments(p),
     }));
+    setDismissedKey(null);
   }
 
   function handleReset() {
     if (!period) return;
     if (Object.keys(period.assignments).length === 0) return;
     mutatePeriod((p) => ({ ...p, undoSnapshot: p.assignments, assignments: {} }));
+    setDismissedKey(null);
   }
 
   function handleUndo() {
     if (!period || !period.undoSnapshot) return;
     mutatePeriod((p) => ({ ...p, assignments: p.undoSnapshot ?? {}, undoSnapshot: null }));
+    setDismissedKey(null);
   }
 
   function handleApplyPreset(key: PresetKey) {
@@ -311,6 +438,7 @@ export default function App() {
     const preset = PRESETS.find((p) => p.key === key);
     if (!preset) return;
     mutatePeriod((p) => ({ ...p, layout: preset.build(), assignments: {}, undoSnapshot: null }));
+    setDismissedKey(null);
   }
 
   function handleAddSeat() {
@@ -333,6 +461,7 @@ export default function App() {
       delete next[seatId];
       return { ...p, layout: { ...p.layout, seats }, assignments: next };
     });
+    setDismissedKey(null);
   }
 
   function handleRotateFront() {
@@ -340,12 +469,11 @@ export default function App() {
     const order: Orientation[] = ['top', 'right', 'bottom', 'left'];
     mutatePeriod((p) => {
       const idx = order.indexOf(p.layout.frontOfRoom);
-      const next = order[(idx + 1) % order.length];
-      return { ...p, layout: { ...p.layout, frontOfRoom: next } };
+      return { ...p, layout: { ...p.layout, frontOfRoom: order[(idx + 1) % order.length] } };
     });
   }
 
-  // ── Empty state ───────────────────────────────────────────────────────────
+  // ── Empty state ───────────────────────────────────────────────────────
   if (!period) {
     return (
       <div className="app app--empty">
@@ -360,7 +488,7 @@ export default function App() {
 
   const canUndo = !!period.undoSnapshot;
   const canShuffle = period.roster.length > 0 && period.layout.seats.length > 0;
-  const isSubMode = viewMode === 'sub';
+  const selectedStudent = selectedStudentId ? studentById.get(selectedStudentId) ?? null : null;
 
   return (
     <DndContext
@@ -380,16 +508,14 @@ export default function App() {
           </div>
         </header>
 
-        {/* Storage quota warning */}
         {saveError && (
           <div className="save-error" role="alert">
             ⚠️ Storage quota exceeded — photos may not have saved. Remove some photos to free up space.
           </div>
         )}
 
-        {/* View-mode controls: always visible */}
+        {/* ── View-mode bar ─────────────────────────────────────────────── */}
         <div className="view-mode-bar">
-          {/* Segmented control — Editor | Sub mode */}
           <div className="segmented" role="tablist" aria-label="View mode">
             <button
               type="button"
@@ -412,7 +538,21 @@ export default function App() {
           </div>
 
           <div className="view-mode-bar__right">
-            {/* Photos toggle */}
+            {/* Story 3: private view toggle — only in editor mode */}
+            {!isSubMode && (
+              <label className="private-view-toggle">
+                <input
+                  type="checkbox"
+                  checked={privateView}
+                  onChange={(e) => {
+                    setPrivateView(e.target.checked);
+                    if (e.target.checked) setSelectedStudentId(null);
+                  }}
+                  aria-pressed={privateView}
+                />
+                Private view — teacher only
+              </label>
+            )}
             <button
               type="button"
               className={`photos-toggle${photosEnabled ? ' photos-toggle--on' : ''}`}
@@ -422,21 +562,27 @@ export default function App() {
             >
               📷 Photos: {photosEnabled ? 'on' : 'off'}
             </button>
-
-            {/* Print / PDF — only meaningful when viewing the sub layout */}
             <button
               type="button"
               onClick={() => window.print()}
               className="print-btn"
               aria-label="Open print dialog"
-              title="Print or save as PDF"
             >
               🖨 Print / PDF
             </button>
           </div>
         </div>
 
-        {/* Editor chrome — hidden in Sub mode */}
+        {/* ── Adjacency warning banner ────────────────────────────────── */}
+        {showBanner && (
+          <AdjacencyBanner
+            violations={violations}
+            studentById={studentById}
+            onDismiss={() => setDismissedKey(currentViolationKey)}
+          />
+        )}
+
+        {/* Editor chrome */}
         {!isSubMode && (
           <>
             <PeriodTabs
@@ -449,7 +595,7 @@ export default function App() {
             />
             <Toolbar
               editMode={editMode}
-              onToggleEdit={() => setEditMode((v) => !v)}
+              onToggleEdit={() => { setEditMode((v) => !v); setSelectedStudentId(null); }}
               onShuffle={handleShuffle}
               onReset={handleReset}
               onUndo={handleUndo}
@@ -460,9 +606,8 @@ export default function App() {
           </>
         )}
 
-        <main className={`app__main${isSubMode ? ' app__main--sub' : ''}`}>
+        <main className={`app__main${isSubMode ? ' app__main--sub' : ''}${selectedStudent ? ' app__main--panel-open' : ''}`}>
           {isSubMode ? (
-            /* ── Sub mode ── */
             <SubModeView
               period={period}
               studentById={studentById}
@@ -471,7 +616,6 @@ export default function App() {
               readOnly
             />
           ) : (
-            /* ── Editor mode ── */
             <>
               <RosterPanel
                 students={period.roster}
@@ -485,6 +629,8 @@ export default function App() {
                 assignments={period.assignments}
                 editMode={editMode}
                 photosEnabled={photosEnabled}
+                privateView={privateView}
+                selectedStudentId={selectedStudentId}
                 teacherName={period.teacherName ?? ''}
                 roomNumber={period.roomNumber ?? ''}
                 subNotes={period.subNotes ?? ''}
@@ -495,7 +641,24 @@ export default function App() {
                 onPhotoRemove={handlePhotoRemove}
                 onUpdateSubNotes={handleUpdateSubNotes}
                 onUpdateMeta={handleUpdateMeta}
+                onSelectStudent={handleSelectStudent}
+                onDeselectStudent={handleDeselectStudent}
               />
+              {/* Right-rail details panel */}
+              {selectedStudent && !editMode && (
+                <StudentDetailsPanel
+                  student={selectedStudent}
+                  period={period}
+                  studentById={studentById}
+                  photosEnabled={photosEnabled}
+                  savePending={savePending}
+                  onClose={handleDeselectStudent}
+                  onUpdateAccommodations={handleUpdateAccommodations}
+                  onUpdateNotes={handleUpdateStudentNotes}
+                  onAddPairFlag={handleAddPairFlag}
+                  onRemovePairFlag={handleRemovePairFlag}
+                />
+              )}
             </>
           )}
         </main>
@@ -508,6 +671,7 @@ export default function App() {
           />
         )}
       </div>
+
       <DragOverlay dropAnimation={null}>
         {activeDragStudent ? (
           <div className="student-card student-card--overlay">{fullName(activeDragStudent)}</div>

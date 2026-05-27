@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import type { Layout, Student } from '../types';
+import type { AccommodationId, Layout, Student } from '../types';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../layouts';
 import { SeatBox } from './SeatBox';
 import { SubNotesEditor } from './SubNotesEditor';
+import { AccommodationLegend } from './AccommodationLegend';
 
 interface Props {
   layout: Layout;
@@ -10,6 +11,8 @@ interface Props {
   assignments: Record<string, string>;
   editMode: boolean;
   photosEnabled: boolean;
+  privateView: boolean;
+  selectedStudentId: string | null;
   teacherName: string;
   roomNumber: string;
   subNotes: string;
@@ -20,6 +23,8 @@ interface Props {
   onPhotoRemove: (studentId: string) => void;
   onUpdateSubNotes: (notes: string) => void;
   onUpdateMeta: (fields: { teacherName?: string; roomNumber?: string }) => void;
+  onSelectStudent: (studentId: string) => void;
+  onDeselectStudent: () => void;
 }
 
 export function SeatingCanvas({
@@ -28,6 +33,8 @@ export function SeatingCanvas({
   assignments,
   editMode,
   photosEnabled,
+  privateView,
+  selectedStudentId,
   teacherName,
   roomNumber,
   subNotes,
@@ -38,6 +45,8 @@ export function SeatingCanvas({
   onPhotoRemove,
   onUpdateSubNotes,
   onUpdateMeta,
+  onSelectStudent,
+  onDeselectStudent,
 }: Props) {
   const [editingMeta, setEditingMeta] = useState(false);
   const [draftTeacher, setDraftTeacher] = useState('');
@@ -54,8 +63,12 @@ export function SeatingCanvas({
     setEditingMeta(false);
   }
 
-  function cancelMetaEdit() {
-    setEditingMeta(false);
+  // Collect accommodation IDs currently in use for the legend
+  const activeAccommodations = new Set<AccommodationId>();
+  for (const student of studentById.values()) {
+    for (const id of (student.accommodations ?? [])) {
+      activeAccommodations.add(id);
+    }
   }
 
   return (
@@ -86,7 +99,7 @@ export function SeatingCanvas({
             <button type="button" className="canvas-meta__save" onClick={saveMetaEdit}>
               Save
             </button>
-            <button type="button" className="btn-ghost canvas-meta__cancel" onClick={cancelMetaEdit}>
+            <button type="button" className="btn-ghost canvas-meta__cancel" onClick={() => setEditingMeta(false)}>
               Cancel
             </button>
           </div>
@@ -105,7 +118,13 @@ export function SeatingCanvas({
       </div>
 
       <div className={`front-indicator front-indicator--${layout.frontOfRoom}`}>Front of room</div>
-      <div className="canvas" style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}>
+
+      {/* Canvas — clicking empty space deselects */}
+      <div
+        className="canvas"
+        style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+        onClick={onDeselectStudent}
+      >
         {editMode && (
           <div className="canvas__edit-toolbar">
             <button type="button" onClick={onAddSeat}>
@@ -131,15 +150,22 @@ export function SeatingCanvas({
               occupant={occupant}
               editMode={editMode}
               photosEnabled={photosEnabled}
+              privateView={privateView}
+              isSelected={!!occupant && occupant.id === selectedStudentId}
               onRemoveSeat={onRemoveSeat}
               onPhotoUpload={onPhotoUpload}
               onPhotoRemove={onPhotoRemove}
+              onSelectStudent={onSelectStudent}
+              onDeselectStudent={onDeselectStudent}
             />
           );
         })}
       </div>
 
-      {/* Sub notes editor — always visible in Editor view */}
+      {/* Accommodation legend — only when tags are in use and not in private view */}
+      {!privateView && <AccommodationLegend activeIds={activeAccommodations} />}
+
+      {/* Sub notes editor */}
       <SubNotesEditor
         value={subNotes}
         readOnly={false}

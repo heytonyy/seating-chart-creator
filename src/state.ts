@@ -15,6 +15,7 @@ export function newPeriod(name: string, presetKey: PresetKey = 'rows'): Period {
     teacherName: '',
     roomNumber: '',
     subNotes: '',
+    pairFlags: [],
   };
 }
 

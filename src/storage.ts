@@ -1,12 +1,15 @@
 import type { AppState, Student } from './types';
 
-const STORAGE_KEY = 'seating-chart-creator:v1';
+const STORAGE_KEY = 'seating-chart-creator:v2';
+/** Legacy key written by Stories 1 & 2. We read it once for migration then leave it. */
+const LEGACY_KEY = 'seating-chart-creator:v1';
 
 export type SaveResult = 'ok' | 'quota';
 
 export function loadState(): AppState | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    // Try current key first; fall back to legacy key for seamless upgrade.
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as AppState;
     return migrateState(parsed);
@@ -18,21 +21,43 @@ export function loadState(): AppState | null {
 function migrateState(state: AppState): AppState {
   let mutated = false;
 
-  // --- Story 1 migration: split legacy "name" field into firstName/lastName ---
   const periods = state.periods.map((p) => {
+    // ── Story 1: split legacy "name" field ──────────────────────────────
     const roster = p.roster.map((s) => {
       const legacy = s as Student & { name?: string };
-      if (typeof legacy.firstName === 'string' && typeof legacy.lastName === 'string') return s;
-      mutated = true;
-      return splitLegacyName(legacy.id, legacy.name ?? '');
+      let next = s;
+
+      if (typeof legacy.firstName !== 'string' || typeof legacy.lastName !== 'string') {
+        mutated = true;
+        next = splitLegacyName(legacy.id, legacy.name ?? '');
+      }
+
+      // ── Story 2 fields ──────────────────────────────────────────────
+      if ((next as Student & { photoDataUrl?: string }).photoDataUrl === undefined) {
+        // already optional — nothing needed
+      }
+
+      // ── Story 3 fields ──────────────────────────────────────────────
+      const s3 = next as Partial<Student>;
+      if (!Array.isArray(s3.accommodations) || typeof s3.notes !== 'string') {
+        mutated = true;
+        next = {
+          ...next,
+          accommodations: Array.isArray(s3.accommodations) ? s3.accommodations : [],
+          notes: typeof s3.notes === 'string' ? s3.notes : '',
+        };
+      }
+
+      return next;
     });
 
-    // --- Story 2 migration: default new Period fields ---
-    const needsPeriodMigration =
-      p.teacherName === undefined ||
-      p.roomNumber === undefined ||
-      p.subNotes === undefined;
-    if (needsPeriodMigration) mutated = true;
+    // ── Story 2 period fields ────────────────────────────────────────
+    const needsP2 = p.teacherName === undefined || p.roomNumber === undefined || p.subNotes === undefined;
+    if (needsP2) mutated = true;
+
+    // ── Story 3 period fields ────────────────────────────────────────
+    const needsP3 = !Array.isArray((p as unknown as { pairFlags?: unknown }).pairFlags);
+    if (needsP3) mutated = true;
 
     return {
       ...p,
@@ -40,28 +65,24 @@ function migrateState(state: AppState): AppState {
       teacherName: p.teacherName ?? '',
       roomNumber: p.roomNumber ?? '',
       subNotes: p.subNotes ?? '',
+      pairFlags: needsP3 ? [] : p.pairFlags,
     };
   });
 
-  // --- Story 2 migration: default new AppState fields ---
-  const needsAppMigration =
-    (state as AppState & { viewMode?: string }).viewMode === undefined ||
-    (state as AppState & { photosEnabled?: boolean }).photosEnabled === undefined;
-  if (needsAppMigration) mutated = true;
-
+  // ── AppState fields ────────────────────────────────────────────────
   const viewMode = (state.viewMode as 'editor' | 'sub' | undefined) ?? 'editor';
   const photosEnabled = (state.photosEnabled as boolean | undefined) ?? true;
+  if (state.viewMode === undefined || state.photosEnabled === undefined) mutated = true;
 
-  return mutated
-    ? { ...state, periods, viewMode, photosEnabled }
-    : { ...state, periods };
+  return mutated ? { ...state, periods, viewMode, photosEnabled } : { ...state, periods };
 }
 
 function splitLegacyName(id: string, name: string): Student {
   const trimmed = name.trim();
   const idx = trimmed.indexOf(' ');
-  if (idx < 0) return { id, firstName: trimmed, lastName: '' };
-  return { id, firstName: trimmed.slice(0, idx), lastName: trimmed.slice(idx + 1).trim() };
+  const [firstName, lastName] =
+    idx < 0 ? [trimmed, ''] : [trimmed.slice(0, idx), trimmed.slice(idx + 1).trim()];
+  return { id, firstName, lastName, accommodations: [], notes: '' };
 }
 
 export function saveState(state: AppState): SaveResult {
@@ -69,7 +90,6 @@ export function saveState(state: AppState): SaveResult {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     return 'ok';
   } catch {
-    // Most likely a QuotaExceededError — photos are the likely culprit.
     return 'quota';
   }
 }
