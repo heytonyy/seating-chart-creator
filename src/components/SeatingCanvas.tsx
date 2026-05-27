@@ -1,15 +1,25 @@
+import { useState } from 'react';
 import type { Layout, Student } from '../types';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../layouts';
 import { SeatBox } from './SeatBox';
+import { SubNotesEditor } from './SubNotesEditor';
 
 interface Props {
   layout: Layout;
   studentById: Map<string, Student>;
   assignments: Record<string, string>;
   editMode: boolean;
+  photosEnabled: boolean;
+  teacherName: string;
+  roomNumber: string;
+  subNotes: string;
   onRemoveSeat: (seatId: string) => void;
   onAddSeat: () => void;
   onRotateFront: () => void;
+  onPhotoUpload: (studentId: string, dataUrl: string) => void;
+  onPhotoRemove: (studentId: string) => void;
+  onUpdateSubNotes: (notes: string) => void;
+  onUpdateMeta: (fields: { teacherName?: string; roomNumber?: string }) => void;
 }
 
 export function SeatingCanvas({
@@ -17,12 +27,83 @@ export function SeatingCanvas({
   studentById,
   assignments,
   editMode,
+  photosEnabled,
+  teacherName,
+  roomNumber,
+  subNotes,
   onRemoveSeat,
   onAddSeat,
   onRotateFront,
+  onPhotoUpload,
+  onPhotoRemove,
+  onUpdateSubNotes,
+  onUpdateMeta,
 }: Props) {
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [draftTeacher, setDraftTeacher] = useState('');
+  const [draftRoom, setDraftRoom] = useState('');
+
+  function openMetaEdit() {
+    setDraftTeacher(teacherName);
+    setDraftRoom(roomNumber);
+    setEditingMeta(true);
+  }
+
+  function saveMetaEdit() {
+    onUpdateMeta({ teacherName: draftTeacher.trim(), roomNumber: draftRoom.trim() });
+    setEditingMeta(false);
+  }
+
+  function cancelMetaEdit() {
+    setEditingMeta(false);
+  }
+
   return (
     <section className="canvas-wrap" aria-label="Seating canvas">
+      {/* Period metadata strip */}
+      <div className="canvas-meta">
+        {editingMeta ? (
+          <div className="canvas-meta__form">
+            <label className="canvas-meta__label">
+              Teacher
+              <input
+                className="canvas-meta__input"
+                value={draftTeacher}
+                onChange={(e) => setDraftTeacher(e.target.value)}
+                placeholder="Your name"
+                autoFocus
+              />
+            </label>
+            <label className="canvas-meta__label">
+              Room
+              <input
+                className="canvas-meta__input canvas-meta__input--narrow"
+                value={draftRoom}
+                onChange={(e) => setDraftRoom(e.target.value)}
+                placeholder="101"
+              />
+            </label>
+            <button type="button" className="canvas-meta__save" onClick={saveMetaEdit}>
+              Save
+            </button>
+            <button type="button" className="btn-ghost canvas-meta__cancel" onClick={cancelMetaEdit}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="canvas-meta__display">
+            <span className="canvas-meta__text">
+              {teacherName || roomNumber
+                ? [teacherName, roomNumber ? `Room ${roomNumber}` : ''].filter(Boolean).join(' · ')
+                : 'No teacher / room set'}
+            </span>
+            <button type="button" className="btn-ghost canvas-meta__edit-btn" onClick={openMetaEdit} title="Edit teacher name and room number">
+              ✎ Edit
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className={`front-indicator front-indicator--${layout.frontOfRoom}`}>Front of room</div>
       <div className="canvas" style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}>
         {editMode && (
@@ -49,11 +130,21 @@ export function SeatingCanvas({
               seat={seat}
               occupant={occupant}
               editMode={editMode}
+              photosEnabled={photosEnabled}
               onRemoveSeat={onRemoveSeat}
+              onPhotoUpload={onPhotoUpload}
+              onPhotoRemove={onPhotoRemove}
             />
           );
         })}
       </div>
+
+      {/* Sub notes editor — always visible in Editor view */}
+      <SubNotesEditor
+        value={subNotes}
+        readOnly={false}
+        onChange={onUpdateSubNotes}
+      />
     </section>
   );
 }

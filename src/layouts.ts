@@ -2,9 +2,9 @@ import type { Layout, Seat } from './types';
 import { genId } from './storage';
 
 export const SEAT_WIDTH = 84;
-export const SEAT_HEIGHT = 60;
+export const SEAT_HEIGHT = 80;
 export const CANVAS_WIDTH = 880;
-export const CANVAS_HEIGHT = 600;
+export const CANVAS_HEIGHT = 640;
 export const GRID_SNAP = 8;
 
 function mkSeat(x: number, y: number): Seat {

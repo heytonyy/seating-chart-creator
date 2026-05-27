@@ -12,12 +12,20 @@ export function newPeriod(name: string, presetKey: PresetKey = 'rows'): Period {
     assignments: {},
     undoSnapshot: null,
     updatedAt: Date.now(),
+    teacherName: '',
+    roomNumber: '',
+    subNotes: '',
   };
 }
 
 export function emptyState(): AppState {
   const first = newPeriod('Period 1', 'rows');
-  return { periods: [first], activePeriodId: first.id };
+  return {
+    periods: [first],
+    activePeriodId: first.id,
+    viewMode: 'editor',
+    photosEnabled: true,
+  };
 }
 
 export function findPeriod(state: AppState): Period | null {

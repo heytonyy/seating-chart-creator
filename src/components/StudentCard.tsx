@@ -1,5 +1,6 @@
 import { useDraggable } from '@dnd-kit/core';
 import type { CSSProperties } from 'react';
+import { Avatar } from './Avatar';
 
 interface Props {
   studentId: string;
@@ -7,9 +8,19 @@ interface Props {
   lastName: string;
   sourceSeatId?: string;
   variant?: 'roster' | 'seated';
+  photoDataUrl?: string;
+  photosEnabled?: boolean;
 }
 
-export function StudentCard({ studentId, firstName, lastName, sourceSeatId, variant = 'roster' }: Props) {
+export function StudentCard({
+  studentId,
+  firstName,
+  lastName,
+  sourceSeatId,
+  variant = 'roster',
+  photoDataUrl,
+  photosEnabled = true,
+}: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `student:${studentId}`,
     data: { type: 'student', studentId, sourceSeatId },
@@ -35,8 +46,18 @@ export function StudentCard({ studentId, firstName, lastName, sourceSeatId, vari
         {...listeners}
         aria-label={`Student ${displayName}. Press space to pick up, arrow keys to move, space to drop.`}
       >
-        <span className="student-card__line student-card__line--first">{firstName}</span>
-        {lastName && <span className="student-card__line student-card__line--last">{lastName}</span>}
+        <Avatar
+          firstName={firstName}
+          lastName={lastName}
+          photoDataUrl={photoDataUrl}
+          photosEnabled={photosEnabled}
+          size={28}
+          className="student-card__avatar"
+        />
+        <div className="student-card__names">
+          <span className="student-card__line student-card__line--first">{firstName}</span>
+          {lastName && <span className="student-card__line student-card__line--last">{lastName}</span>}
+        </div>
       </div>
     );
   }
@@ -57,10 +78,9 @@ export function StudentCard({ studentId, firstName, lastName, sourceSeatId, vari
 
 /** Map longest name-part length to a font size (px). Linear bands give predictable scaling within the fixed seat. */
 function scaledFontSize(longest: number): number {
-  if (longest <= 6) return 13;
-  if (longest <= 8) return 12;
-  if (longest <= 10) return 11;
-  if (longest <= 12) return 10;
-  if (longest <= 14) return 9;
+  if (longest <= 6) return 12;
+  if (longest <= 8) return 11;
+  if (longest <= 10) return 10;
+  if (longest <= 12) return 9;
   return 8;
 }

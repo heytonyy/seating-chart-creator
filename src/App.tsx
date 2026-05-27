@@ -21,17 +21,25 @@ import { Toolbar } from './components/Toolbar';
 import { RosterImportModal } from './components/RosterImportModal';
 import { SaveIndicator } from './components/SaveIndicator';
 import { ThemeToggle } from './components/ThemeToggle';
+import { SubModeView } from './components/SubModeView';
 import { applyTheme, getInitialTheme, getStoredTheme, storeTheme, type Theme } from './theme';
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
 
 export default function App() {
-  const [state, setState] = useState<AppState>(() => loadState() ?? emptyState());
+  const [state, setState] = useState<AppState>(() => {
+    const loaded = loadState();
+    if (loaded) return loaded;
+    const fresh = emptyState();
+    // Ensure fresh state has Story-2 fields.
+    return { ...fresh, viewMode: 'editor', photosEnabled: true };
+  });
   const [editMode, setEditMode] = useState(false);
   const [importing, setImporting] = useState(false);
   const [activeDragStudent, setActiveDragStudent] = useState<Student | null>(null);
   const [savePending, setSavePending] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(0);
+  const [saveError, setSaveError] = useState(false);
   const saveTimerRef = useRef<number | null>(null);
   const [theme, setTheme] = useState<Theme>(() => {
     const t = getInitialTheme();
@@ -65,9 +73,14 @@ export default function App() {
     setSavePending(true);
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(() => {
-      saveState(state);
+      const result = saveState(state);
       setSavePending(false);
-      setLastSavedAt(Date.now());
+      if (result === 'ok') {
+        setLastSavedAt(Date.now());
+        setSaveError(false);
+      } else {
+        setSaveError(true);
+      }
     }, AUTOSAVE_DEBOUNCE_MS);
     return () => {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
@@ -98,6 +111,50 @@ export default function App() {
     setState((s) => updatePeriod(s, period.id, mut));
   }
 
+  // ── View mode ─────────────────────────────────────────────────────────────
+  const viewMode = state.viewMode ?? 'editor';
+  const photosEnabled = state.photosEnabled ?? true;
+
+  function handleSetViewMode(mode: 'editor' | 'sub') {
+    setState((s) => ({ ...s, viewMode: mode }));
+    if (mode === 'editor') setEditMode(false);
+  }
+
+  function handleTogglePhotos() {
+    setState((s) => ({ ...s, photosEnabled: !s.photosEnabled }));
+  }
+
+  // ── Photo handlers ────────────────────────────────────────────────────────
+  function handlePhotoUpload(studentId: string, dataUrl: string) {
+    if (!period) return;
+    mutatePeriod((p) => ({
+      ...p,
+      roster: p.roster.map((s) => (s.id === studentId ? { ...s, photoDataUrl: dataUrl } : s)),
+    }));
+  }
+
+  function handlePhotoRemove(studentId: string) {
+    if (!period) return;
+    mutatePeriod((p) => ({
+      ...p,
+      roster: p.roster.map((s) =>
+        s.id === studentId ? { ...s, photoDataUrl: undefined } : s,
+      ),
+    }));
+  }
+
+  // ── Period metadata ───────────────────────────────────────────────────────
+  function handleUpdateMeta(fields: { teacherName?: string; roomNumber?: string }) {
+    if (!period) return;
+    mutatePeriod((p) => ({ ...p, ...fields }));
+  }
+
+  function handleUpdateSubNotes(notes: string) {
+    if (!period) return;
+    mutatePeriod((p) => ({ ...p, subNotes: notes }));
+  }
+
+  // ── Drag & drop ───────────────────────────────────────────────────────────
   function handleDragStart(e: DragStartEvent) {
     const data = e.active.data.current as { type?: string; studentId?: string } | undefined;
     if (data?.type === 'student' && data.studentId) {
@@ -141,7 +198,6 @@ export default function App() {
       const sourceSeatId = aData.sourceSeatId;
 
       if (oData?.type === 'roster') {
-        // Return to roster: clear any seat currently holding this student.
         if (!sourceSeatId) return;
         mutatePeriod((p) => {
           const next = { ...p.assignments };
@@ -157,19 +213,14 @@ export default function App() {
         mutatePeriod((p) => {
           const next = { ...p.assignments };
           const displaced = next[targetSeatId];
-          // Move student into target seat.
           next[targetSeatId] = studentId;
-          // Handle the source side.
           if (sourceSeatId) {
             if (displaced) {
-              next[sourceSeatId] = displaced; // swap
+              next[sourceSeatId] = displaced;
             } else {
               delete next[sourceSeatId];
             }
-          } else if (displaced) {
-            // Came from roster → displaced student goes back to roster (no entry needed).
           }
-          // Also clean up: if this student was somehow assigned to another seat (shouldn't be — we keep state consistent), remove duplicates.
           for (const [sid, stid] of Object.entries(next)) {
             if (sid !== targetSeatId && stid === studentId) delete next[sid];
           }
@@ -180,6 +231,7 @@ export default function App() {
     }
   }
 
+  // ── Period management ─────────────────────────────────────────────────────
   function handleSelectPeriod(id: string) {
     setState((s) => ({ ...s, activePeriodId: id }));
     setEditMode(false);
@@ -206,7 +258,6 @@ export default function App() {
   function handleSaveRoster(parsed: ParsedStudent[]) {
     if (!period) return;
     mutatePeriod((p) => {
-      // Preserve IDs for existing students by full name to keep assignments stable.
       const byKey = new Map<string, Student>();
       for (const s of p.roster) byKey.set(fullName(s).toLowerCase(), s);
       const seen = new Set<string>();
@@ -265,7 +316,6 @@ export default function App() {
   function handleAddSeat() {
     if (!period) return;
     mutatePeriod((p) => {
-      // Find an empty spot near the center.
       const newSeat = {
         id: genId('seat'),
         x: clampAndSnap(CANVAS_WIDTH / 2 - SEAT_WIDTH / 2 + (p.layout.seats.length % 6) * 12, CANVAS_WIDTH - SEAT_WIDTH),
@@ -295,6 +345,7 @@ export default function App() {
     });
   }
 
+  // ── Empty state ───────────────────────────────────────────────────────────
   if (!period) {
     return (
       <div className="app app--empty">
@@ -309,6 +360,7 @@ export default function App() {
 
   const canUndo = !!period.undoSnapshot;
   const canShuffle = period.roster.length > 0 && period.layout.seats.length > 0;
+  const isSubMode = viewMode === 'sub';
 
   return (
     <DndContext
@@ -327,41 +379,127 @@ export default function App() {
             <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
           </div>
         </header>
-        <PeriodTabs
-          periods={state.periods}
-          activeId={state.activePeriodId}
-          onSelect={handleSelectPeriod}
-          onCreate={handleCreatePeriod}
-          onRename={handleRenamePeriod}
-          onDelete={handleDeletePeriod}
-        />
-        <Toolbar
-          editMode={editMode}
-          onToggleEdit={() => setEditMode((v) => !v)}
-          onShuffle={handleShuffle}
-          onReset={handleReset}
-          onUndo={handleUndo}
-          canUndo={canUndo}
-          canShuffle={canShuffle}
-          onApplyPreset={handleApplyPreset}
-        />
-        <main className="app__main">
-          <RosterPanel
-            students={period.roster}
-            unassigned={unassigned}
-            onOpenImport={() => setImporting(true)}
-            onClearRoster={handleClearRoster}
-          />
-          <SeatingCanvas
-            layout={period.layout}
-            studentById={studentById}
-            assignments={period.assignments}
-            editMode={editMode}
-            onRemoveSeat={handleRemoveSeat}
-            onAddSeat={handleAddSeat}
-            onRotateFront={handleRotateFront}
-          />
+
+        {/* Storage quota warning */}
+        {saveError && (
+          <div className="save-error" role="alert">
+            ⚠️ Storage quota exceeded — photos may not have saved. Remove some photos to free up space.
+          </div>
+        )}
+
+        {/* View-mode controls: always visible */}
+        <div className="view-mode-bar">
+          {/* Segmented control — Editor | Sub mode */}
+          <div className="segmented" role="tablist" aria-label="View mode">
+            <button
+              type="button"
+              role="tab"
+              className={`segmented__btn${!isSubMode ? ' segmented__btn--active' : ''}`}
+              aria-selected={!isSubMode}
+              onClick={() => handleSetViewMode('editor')}
+            >
+              Editor
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={`segmented__btn${isSubMode ? ' segmented__btn--active' : ''}`}
+              aria-selected={isSubMode}
+              onClick={() => handleSetViewMode('sub')}
+            >
+              Sub mode
+            </button>
+          </div>
+
+          <div className="view-mode-bar__right">
+            {/* Photos toggle */}
+            <button
+              type="button"
+              className={`photos-toggle${photosEnabled ? ' photos-toggle--on' : ''}`}
+              aria-pressed={photosEnabled}
+              onClick={handleTogglePhotos}
+              title={photosEnabled ? 'Photos on — click to hide' : 'Photos off — click to show'}
+            >
+              📷 Photos: {photosEnabled ? 'on' : 'off'}
+            </button>
+
+            {/* Print / PDF — only meaningful when viewing the sub layout */}
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="print-btn"
+              aria-label="Open print dialog"
+              title="Print or save as PDF"
+            >
+              🖨 Print / PDF
+            </button>
+          </div>
+        </div>
+
+        {/* Editor chrome — hidden in Sub mode */}
+        {!isSubMode && (
+          <>
+            <PeriodTabs
+              periods={state.periods}
+              activeId={state.activePeriodId}
+              onSelect={handleSelectPeriod}
+              onCreate={handleCreatePeriod}
+              onRename={handleRenamePeriod}
+              onDelete={handleDeletePeriod}
+            />
+            <Toolbar
+              editMode={editMode}
+              onToggleEdit={() => setEditMode((v) => !v)}
+              onShuffle={handleShuffle}
+              onReset={handleReset}
+              onUndo={handleUndo}
+              canUndo={canUndo}
+              canShuffle={canShuffle}
+              onApplyPreset={handleApplyPreset}
+            />
+          </>
+        )}
+
+        <main className={`app__main${isSubMode ? ' app__main--sub' : ''}`}>
+          {isSubMode ? (
+            /* ── Sub mode ── */
+            <SubModeView
+              period={period}
+              studentById={studentById}
+              photosEnabled={photosEnabled}
+              onUpdateSubNotes={handleUpdateSubNotes}
+              readOnly
+            />
+          ) : (
+            /* ── Editor mode ── */
+            <>
+              <RosterPanel
+                students={period.roster}
+                unassigned={unassigned}
+                onOpenImport={() => setImporting(true)}
+                onClearRoster={handleClearRoster}
+              />
+              <SeatingCanvas
+                layout={period.layout}
+                studentById={studentById}
+                assignments={period.assignments}
+                editMode={editMode}
+                photosEnabled={photosEnabled}
+                teacherName={period.teacherName ?? ''}
+                roomNumber={period.roomNumber ?? ''}
+                subNotes={period.subNotes ?? ''}
+                onRemoveSeat={handleRemoveSeat}
+                onAddSeat={handleAddSeat}
+                onRotateFront={handleRotateFront}
+                onPhotoUpload={handlePhotoUpload}
+                onPhotoRemove={handlePhotoRemove}
+                onUpdateSubNotes={handleUpdateSubNotes}
+                onUpdateMeta={handleUpdateMeta}
+              />
+            </>
+          )}
         </main>
+
         {importing && (
           <RosterImportModal
             initialStudents={period.roster}

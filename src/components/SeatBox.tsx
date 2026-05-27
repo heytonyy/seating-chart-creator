@@ -3,15 +3,27 @@ import type { CSSProperties } from 'react';
 import type { Seat, Student } from '../types';
 import { SEAT_WIDTH, SEAT_HEIGHT } from '../layouts';
 import { StudentCard } from './StudentCard';
+import { PhotoUploadMenu } from './PhotoUploadMenu';
 
 interface Props {
   seat: Seat;
   occupant: Student | null;
   editMode: boolean;
+  photosEnabled: boolean;
   onRemoveSeat: (seatId: string) => void;
+  onPhotoUpload: (studentId: string, dataUrl: string) => void;
+  onPhotoRemove: (studentId: string) => void;
 }
 
-export function SeatBox({ seat, occupant, editMode, onRemoveSeat }: Props) {
+export function SeatBox({
+  seat,
+  occupant,
+  editMode,
+  photosEnabled,
+  onRemoveSeat,
+  onPhotoUpload,
+  onPhotoRemove,
+}: Props) {
   const { isOver, setNodeRef: dropRef } = useDroppable({
     id: `seat:${seat.id}`,
     data: { type: 'seat', seatId: seat.id },
@@ -51,6 +63,7 @@ export function SeatBox({ seat, occupant, editMode, onRemoveSeat }: Props) {
     occupant && 'seat--filled',
     editMode && 'seat--editable',
     isDragging && 'seat--dragging',
+    !editMode && occupant && 'seat--has-occupant',
   ]
     .filter(Boolean)
     .join(' ');
@@ -86,13 +99,23 @@ export function SeatBox({ seat, occupant, editMode, onRemoveSeat }: Props) {
         </button>
       )}
       {!editMode && occupant && (
-        <StudentCard
-          studentId={occupant.id}
-          firstName={occupant.firstName}
-          lastName={occupant.lastName}
-          sourceSeatId={seat.id}
-          variant="seated"
-        />
+        <>
+          <StudentCard
+            studentId={occupant.id}
+            firstName={occupant.firstName}
+            lastName={occupant.lastName}
+            sourceSeatId={seat.id}
+            variant="seated"
+            photoDataUrl={occupant.photoDataUrl}
+            photosEnabled={photosEnabled}
+          />
+          {/* Photo upload affordance — revealed on hover via CSS */}
+          <PhotoUploadMenu
+            hasPhoto={!!occupant.photoDataUrl}
+            onUpload={(dataUrl) => onPhotoUpload(occupant.id, dataUrl)}
+            onRemove={() => onPhotoRemove(occupant.id)}
+          />
+        </>
       )}
       {!editMode && !occupant && <span className="seat__placeholder">Empty</span>}
     </div>

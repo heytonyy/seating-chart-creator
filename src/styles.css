@@ -684,3 +684,528 @@ h1, h2, h3 {
     flex: 0 0 200px;
   }
 }
+
+/* ── Story 2: View-mode bar ──────────────────────────────────────────────── */
+.view-mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+.view-mode-bar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Segmented control */
+.segmented {
+  display: flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.segmented__btn {
+  border: none;
+  border-radius: 0;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.segmented__btn:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: var(--text);
+  border-color: transparent;
+}
+
+.segmented__btn + .segmented__btn {
+  border-left: 1px solid var(--border-strong);
+}
+
+.segmented__btn--active {
+  background: var(--primary);
+  color: var(--primary-on);
+}
+
+.segmented__btn--active:hover:not(:disabled) {
+  background: var(--primary-hover);
+  color: var(--primary-on);
+}
+
+/* Photos toggle */
+.photos-toggle {
+  font-size: 13px;
+  padding: 5px 12px;
+  color: var(--text-muted);
+}
+
+.photos-toggle--on {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.photos-toggle--on:hover:not(:disabled) {
+  background: var(--primary-soft);
+  border-color: var(--primary-hover);
+  color: var(--primary-hover);
+}
+
+/* Print button */
+.print-btn {
+  font-size: 13px;
+  padding: 5px 12px;
+}
+
+/* Save error banner */
+.save-error {
+  background: #fef2f2;
+  border-bottom: 1px solid #fca5a5;
+  color: #991b1b;
+  font-size: 13px;
+  padding: 8px 24px;
+}
+
+:root[data-theme='dark'] .save-error {
+  background: #3b0a0a;
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+
+/* app__main in sub mode takes full width */
+.app__main--sub {
+  padding: 0;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: visible;
+}
+
+/* ── Story 2: Avatar ──────────────────────────────────────────────────────── */
+.avatar {
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.avatar--photo {
+  object-fit: cover;
+}
+
+.avatar--initials {
+  background: var(--surface-muted);
+  color: var(--primary);
+  font-weight: 700;
+  font-size: inherit;
+  border: 1.5px solid var(--border);
+}
+
+/* ── Story 2: Student card — seated with avatar ───────────────────────────── */
+.student-card--seated {
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 3px;
+  padding: 4px 4px !important;
+}
+
+.student-card__avatar {
+  flex-shrink: 0;
+}
+
+.student-card__names {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+}
+
+.student-card__names .student-card__line {
+  text-align: center;
+  max-width: 100%;
+}
+
+/* ── Story 2: Photo upload menu ───────────────────────────────────────────── */
+.photo-menu {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  display: none;
+  gap: 2px;
+  align-items: center;
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* Show on seat hover (not while dragging) */
+.seat--has-occupant:hover .photo-menu {
+  display: flex;
+  pointer-events: auto;
+}
+
+.photo-menu__input {
+  display: none;
+}
+
+.photo-menu__btn {
+  padding: 2px 5px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  opacity: 0.9;
+}
+
+.photo-menu__btn:hover:not(:disabled) {
+  background: var(--primary);
+  color: var(--primary-on);
+  border-color: var(--primary);
+  opacity: 1;
+}
+
+.photo-menu__btn--remove:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+/* ── Story 2: Canvas metadata strip ──────────────────────────────────────── */
+.canvas-meta {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.canvas-meta__display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.canvas-meta__text {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.canvas-meta__edit-btn {
+  font-size: 12px;
+  padding: 2px 8px;
+  color: var(--text-muted);
+}
+
+.canvas-meta__form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.canvas-meta__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.canvas-meta__input {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  width: 160px;
+}
+
+.canvas-meta__input--narrow {
+  width: 80px;
+}
+
+.canvas-meta__input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.canvas-meta__save {
+  background: var(--primary);
+  color: var(--primary-on);
+  border-color: var(--primary);
+  font-size: 13px;
+  padding: 4px 12px;
+}
+
+.canvas-meta__save:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.canvas-meta__cancel {
+  font-size: 13px;
+  padding: 4px 10px;
+}
+
+/* ── Story 2: Sub notes ───────────────────────────────────────────────────── */
+.sub-notes {
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.sub-notes__heading {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.sub-notes__body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.sub-notes__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.sub-notes__textarea {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  min-height: 72px;
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.sub-notes__textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-color: var(--primary);
+}
+
+/* ── Story 2: Sub mode view ───────────────────────────────────────────────── */
+.sub-mode {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.sub-mode__banner {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sub-mode__chart {
+  padding: 16px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+/* Sub mode header strip */
+.sub-mode__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 12px 0 10px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.sub-mode__header-left,
+.sub-mode__header-right {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sub-mode__header-right {
+  align-items: flex-end;
+}
+
+.sub-mode__period-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sub-mode__date {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sub-mode__header-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Sub mode canvas wrapper — matches the editor canvas layout */
+.sub-mode__canvas-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: auto;
+}
+
+.sub-mode__canvas {
+  position: relative;
+  background:
+    linear-gradient(0deg, var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px),
+    var(--surface-muted);
+  background-size: 40px 40px, 40px 40px;
+  background-position: -1px -1px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+/* Sub mode seat */
+.sub-seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: var(--surface);
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  padding: 2px 3px;
+  overflow: hidden;
+}
+
+.sub-seat--filled {
+  background: linear-gradient(180deg, var(--seat-filled-grad-from) 0%, var(--seat-filled-grad-to) 100%);
+  border-color: var(--primary);
+}
+
+.sub-seat__name {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--primary-hover);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.sub-seat__empty {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ── Story 2: Print / PDF ─────────────────────────────────────────────────── */
+@media print {
+  @page {
+    size: letter;
+    margin: 0.4in;
+  }
+
+  /* Hide all editor chrome */
+  .app__header,
+  .view-mode-bar,
+  .period-tabs,
+  .toolbar,
+  .roster,
+  .save-error,
+  .sub-mode__banner,
+  .photo-menu,
+  .canvas-meta,
+  .canvas__edit-toolbar,
+  .canvas-wrap > .front-indicator,
+  .sub-notes__textarea {
+    display: none !important;
+  }
+
+  /* If the user prints while in editor mode, hide the editor and show nothing extra */
+  .app__main:not(.app__main--sub) {
+    display: none !important;
+  }
+
+  /* Remove background gradients / colors for cleaner ink usage */
+  body,
+  .app,
+  .sub-mode,
+  .sub-mode__chart,
+  .sub-mode__canvas {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* The sub mode chart is the printable region */
+  .sub-mode__chart {
+    padding: 0 !important;
+  }
+
+  /* Scale to fit a Letter page if the canvas is wider than the printable area */
+  #sub-print-root {
+    transform-origin: top left;
+  }
+
+  /* Prevent page breaks inside chart container and notes */
+  .sub-mode__chart,
+  .sub-notes {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Seat colours in print */
+  .sub-seat {
+    border: 1px solid #999 !important;
+    background: white !important;
+  }
+
+  .sub-seat--filled {
+    border-color: #444 !important;
+  }
+
+  .sub-seat__name {
+    color: #111 !important;
+  }
+
+  /* Avatar initials in print */
+  .avatar--initials {
+    background: #e8e8e8 !important;
+    color: #222 !important;
+    border: 1px solid #999 !important;
+  }
+}

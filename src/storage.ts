@@ -2,6 +2,8 @@ import type { AppState, Student } from './types';
 
 const STORAGE_KEY = 'seating-chart-creator:v1';
 
+export type SaveResult = 'ok' | 'quota';
+
 export function loadState(): AppState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -15,6 +17,8 @@ export function loadState(): AppState | null {
 
 function migrateState(state: AppState): AppState {
   let mutated = false;
+
+  // --- Story 1 migration: split legacy "name" field into firstName/lastName ---
   const periods = state.periods.map((p) => {
     const roster = p.roster.map((s) => {
       const legacy = s as Student & { name?: string };
@@ -22,9 +26,35 @@ function migrateState(state: AppState): AppState {
       mutated = true;
       return splitLegacyName(legacy.id, legacy.name ?? '');
     });
-    return { ...p, roster };
+
+    // --- Story 2 migration: default new Period fields ---
+    const needsPeriodMigration =
+      p.teacherName === undefined ||
+      p.roomNumber === undefined ||
+      p.subNotes === undefined;
+    if (needsPeriodMigration) mutated = true;
+
+    return {
+      ...p,
+      roster,
+      teacherName: p.teacherName ?? '',
+      roomNumber: p.roomNumber ?? '',
+      subNotes: p.subNotes ?? '',
+    };
   });
-  return mutated ? { ...state, periods } : state;
+
+  // --- Story 2 migration: default new AppState fields ---
+  const needsAppMigration =
+    (state as AppState & { viewMode?: string }).viewMode === undefined ||
+    (state as AppState & { photosEnabled?: boolean }).photosEnabled === undefined;
+  if (needsAppMigration) mutated = true;
+
+  const viewMode = (state.viewMode as 'editor' | 'sub' | undefined) ?? 'editor';
+  const photosEnabled = (state.photosEnabled as boolean | undefined) ?? true;
+
+  return mutated
+    ? { ...state, periods, viewMode, photosEnabled }
+    : { ...state, periods };
 }
 
 function splitLegacyName(id: string, name: string): Student {
@@ -34,11 +64,13 @@ function splitLegacyName(id: string, name: string): Student {
   return { id, firstName: trimmed.slice(0, idx), lastName: trimmed.slice(idx + 1).trim() };
 }
 
-export function saveState(state: AppState): void {
+export function saveState(state: AppState): SaveResult {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    return 'ok';
   } catch {
-    // Quota exceeded or unavailable — fail silently for MVP.
+    // Most likely a QuotaExceededError — photos are the likely culprit.
+    return 'quota';
   }
 }
 
