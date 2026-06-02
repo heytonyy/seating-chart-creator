@@ -1,16 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
 import { fullName, parseRosterText, type ParsedStudent } from '../state';
+import type { PairFlag, Student } from '../types';
 
 interface Props {
   initialStudents: { firstName: string; lastName: string }[];
+  /** Current roster (with stable ids) — used for the Seating rules pickers. */
+  roster: Student[];
+  pairFlags: PairFlag[];
+  onAddPairFlag: (idA: string, idB: string) => void;
+  onRemovePairFlag: (idA: string, idB: string) => void;
   onCancel: () => void;
   onSave: (students: ParsedStudent[]) => void;
 }
 
-export function RosterImportModal({ initialStudents, onCancel, onSave }: Props) {
+export function RosterImportModal({
+  initialStudents,
+  roster,
+  pairFlags,
+  onAddPairFlag,
+  onRemovePairFlag,
+  onCancel,
+  onSave,
+}: Props) {
   const [text, setText] = useState(initialStudents.map(fullName).join('\n'));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [rulesOpen, setRulesOpen] = useState(pairFlags.length > 0);
+  const [pickA, setPickA] = useState('');
+  const [pickB, setPickB] = useState('');
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -38,6 +55,16 @@ export function RosterImportModal({ initialStudents, onCancel, onSave }: Props) 
   }
 
   const parsedCount = parseRosterText(text).length;
+
+  const byId = new Map(roster.map((s) => [s.id, s]));
+  const canAddPair = pickA !== '' && pickB !== '' && pickA !== pickB;
+
+  function handleAddPair() {
+    if (!canAddPair) return;
+    onAddPairFlag(pickA, pickB);
+    setPickA('');
+    setPickB('');
+  }
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
@@ -71,6 +98,85 @@ export function RosterImportModal({ initialStudents, onCancel, onSave }: Props) 
           />
           <span className="modal__count">{parsedCount} student{parsedCount === 1 ? '' : 's'}</span>
         </div>
+
+        {/* ── Seating rules: "do not seat together" pairs (PRD v4 §4.5) ──── */}
+        <div className="seating-rules">
+          <button
+            type="button"
+            className="seating-rules__toggle"
+            aria-expanded={rulesOpen}
+            onClick={() => setRulesOpen((v) => !v)}
+          >
+            <span aria-hidden="true">{rulesOpen ? '▾' : '▸'}</span> Seating rules
+            {pairFlags.length > 0 ? ` (${pairFlags.length})` : ''}
+          </button>
+          {rulesOpen && (
+            <div className="seating-rules__body">
+              <p className="modal__hint">
+                Students marked “don’t sit together” will never be seated adjacent by Shuffle.
+              </p>
+              {pairFlags.length > 0 ? (
+                <ul className="seating-rules__list">
+                  {pairFlags.map((f) => {
+                    const a = byId.get(f.studentA);
+                    const b = byId.get(f.studentB);
+                    const label = `${a ? fullName(a) : 'Unknown'} ↔ ${b ? fullName(b) : 'Unknown'}`;
+                    return (
+                      <li key={`${f.studentA}:${f.studentB}`} className="seating-rules__item">
+                        <span>{label}</span>
+                        <button
+                          type="button"
+                          className="seating-rules__remove"
+                          aria-label={`Remove rule: ${label}`}
+                          onClick={() => onRemovePairFlag(f.studentA, f.studentB)}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="seating-rules__empty">No rules yet.</p>
+              )}
+              {roster.length >= 2 ? (
+                <div className="seating-rules__add">
+                  <select
+                    aria-label="First student"
+                    value={pickA}
+                    onChange={(e) => setPickA(e.target.value)}
+                  >
+                    <option value="">Student…</option>
+                    {roster.map((s) => (
+                      <option key={s.id} value={s.id} disabled={s.id === pickB}>
+                        {fullName(s)}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="seating-rules__sep" aria-hidden="true">↔</span>
+                  <select
+                    aria-label="Second student"
+                    value={pickB}
+                    onChange={(e) => setPickB(e.target.value)}
+                  >
+                    <option value="">Student…</option>
+                    {roster.map((s) => (
+                      <option key={s.id} value={s.id} disabled={s.id === pickA}>
+                        {fullName(s)}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={handleAddPair} disabled={!canAddPair}>
+                    Add
+                  </button>
+                </div>
+              ) : (
+                <p className="seating-rules__empty">Save at least two students to add a rule.</p>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="modal__actions">
           <button type="button" className="btn-ghost" onClick={onCancel}>
             Cancel

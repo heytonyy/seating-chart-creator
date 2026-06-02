@@ -1,48 +1,31 @@
-import type { Period, PairFlag } from './types';
-import { SEAT_WIDTH, SEAT_HEIGHT } from './layouts';
+import type { Seat } from './types';
+import { SEAT_WIDTH } from './layouts';
 
 /**
- * Two seats are adjacent when the shortest edge-to-edge distance in both axes is ≤ 40 px.
- * This catches side-by-side, front-back, and diagonal pairs in all preset layouts.
+ * Two seats are adjacent when the Euclidean distance between their centers is
+ * below 1.5 × SEAT_WIDTH (~126px at the current 84px seat width). This catches
+ * side-by-side, front-back, and diagonal neighbors across all preset layouts
+ * and hand-edited charts (PRD v4 §4.6). Adjacency ignores seat rotation.
  */
-const ADJACENCY_THRESHOLD = 40;
+export const ADJACENCY_THRESHOLD = 1.5 * SEAT_WIDTH;
 
-export function findAdjacentViolations(period: Period): PairFlag[] {
-  if (!period.pairFlags || period.pairFlags.length === 0) return [];
+/** Map of seatId → set of seatIds adjacent to it. Symmetric. */
+export function buildAdjacencyMap(seats: Seat[]): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const seat of seats) map.set(seat.id, new Set());
 
-  // Build seatId → {x, y} lookup
-  const seatPos = new Map<string, { x: number; y: number }>();
-  for (const seat of period.layout.seats) {
-    seatPos.set(seat.id, { x: seat.x, y: seat.y });
-  }
-
-  // Build studentId → seat position lookup (only seated students)
-  const studentPos = new Map<string, { x: number; y: number }>();
-  for (const [seatId, studentId] of Object.entries(period.assignments)) {
-    const pos = seatPos.get(seatId);
-    if (pos) studentPos.set(studentId, pos);
-  }
-
-  const violations: PairFlag[] = [];
-  for (const flag of period.pairFlags) {
-    const posA = studentPos.get(flag.studentA);
-    const posB = studentPos.get(flag.studentB);
-    // Both must be seated for a warning to fire.
-    if (!posA || !posB) continue;
-
-    const dx = Math.max(0, Math.abs(posA.x - posB.x) - SEAT_WIDTH);
-    const dy = Math.max(0, Math.abs(posA.y - posB.y) - SEAT_HEIGHT);
-    if (dx <= ADJACENCY_THRESHOLD && dy <= ADJACENCY_THRESHOLD) {
-      violations.push(flag);
+  const threshSq = ADJACENCY_THRESHOLD * ADJACENCY_THRESHOLD;
+  for (let i = 0; i < seats.length; i++) {
+    for (let j = i + 1; j < seats.length; j++) {
+      const a = seats[i];
+      const b = seats[j];
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      if (dx * dx + dy * dy < threshSq) {
+        map.get(a.id)!.add(b.id);
+        map.get(b.id)!.add(a.id);
+      }
     }
   }
-  return violations;
-}
-
-/** Stable string key representing the current set of violating pairs. */
-export function violationKey(violations: PairFlag[]): string {
-  return violations
-    .map((v) => `${v.studentA}:${v.studentB}`)
-    .sort()
-    .join('|');
+  return map;
 }

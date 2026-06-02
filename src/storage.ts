@@ -59,9 +59,17 @@ function migrateState(state: AppState): AppState {
     const needsP3 = !Array.isArray((p as unknown as { pairFlags?: unknown }).pairFlags);
     if (needsP3) mutated = true;
 
+    // ── v4: per-seat rotation (additive, idempotent) ──────────────────
+    const seats = p.layout.seats.map((seat) => {
+      if (typeof (seat as { rotation?: unknown }).rotation === 'number') return seat;
+      mutated = true;
+      return { ...seat, rotation: 0 as const };
+    });
+
     return {
       ...p,
       roster,
+      layout: { ...p.layout, seats },
       teacherName: p.teacherName ?? '',
       roomNumber: p.roomNumber ?? '',
       subNotes: p.subNotes ?? '',

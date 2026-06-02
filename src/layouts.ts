@@ -8,7 +8,8 @@ export const CANVAS_HEIGHT = 640;
 export const GRID_SNAP = 8;
 
 function mkSeat(x: number, y: number): Seat {
-  return { id: genId('seat'), x, y };
+  // Presets keep rotation: 0 for backward compatibility (PRD v4 §2.4).
+  return { id: genId('seat'), x, y, rotation: 0 };
 }
 
 function rows(): Seat[] {

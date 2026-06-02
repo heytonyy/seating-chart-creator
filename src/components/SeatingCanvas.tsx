@@ -17,8 +17,11 @@ interface Props {
   roomNumber: string;
   subNotes: string;
   onRemoveSeat: (seatId: string) => void;
+  onRotateSeat: (seatId: string) => void;
   onAddSeat: () => void;
   onRotateFront: () => void;
+  onRevertLayout: () => void;
+  canRevert: boolean;
   onPhotoUpload: (studentId: string, dataUrl: string) => void;
   onPhotoRemove: (studentId: string) => void;
   onUpdateSubNotes: (notes: string) => void;
@@ -39,8 +42,11 @@ export function SeatingCanvas({
   roomNumber,
   subNotes,
   onRemoveSeat,
+  onRotateSeat,
   onAddSeat,
   onRotateFront,
+  onRevertLayout,
+  canRevert,
   onPhotoUpload,
   onPhotoRemove,
   onUpdateSubNotes,
@@ -133,6 +139,14 @@ export function SeatingCanvas({
             <button type="button" onClick={onRotateFront} title="Rotate which side is the front of the room">
               Rotate front ({layout.frontOfRoom})
             </button>
+            <button
+              type="button"
+              onClick={onRevertLayout}
+              disabled={!canRevert}
+              title="Restore seat positions, rotations, and the set of seats to when you opened Edit layout"
+            >
+              Revert changes
+            </button>
           </div>
         )}
         {layout.seats.length === 0 && (
@@ -152,7 +166,9 @@ export function SeatingCanvas({
               photosEnabled={photosEnabled}
               privateView={privateView}
               isSelected={!!occupant && occupant.id === selectedStudentId}
+              frontOfRoom={layout.frontOfRoom}
               onRemoveSeat={onRemoveSeat}
+              onRotateSeat={onRotateSeat}
               onPhotoUpload={onPhotoUpload}
               onPhotoRemove={onPhotoRemove}
               onSelectStudent={onSelectStudent}

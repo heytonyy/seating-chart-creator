@@ -10,14 +10,14 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { restrictToParentElement } from '@dnd-kit/modifiers';
-import type { AccommodationId, AppState, Orientation, Period, Student } from './types';
+import type { AccommodationId, AppState, Layout, Orientation, Period, Seat, Student } from './types';
 import { genId, loadState, saveState } from './storage';
 import {
   emptyState,
   findPeriod,
   fullName,
   newPeriod,
-  shuffleAssignments,
+  shuffleWithConstraints,
   updatePeriod,
   type ParsedStudent,
 } from './state';
@@ -30,7 +30,6 @@ import {
   SEAT_WIDTH,
   type PresetKey,
 } from './layouts';
-import { findAdjacentViolations, violationKey } from './adjacency';
 import { PeriodTabs } from './components/PeriodTabs';
 import { RosterPanel } from './components/RosterPanel';
 import { SeatingCanvas } from './components/SeatingCanvas';
@@ -40,7 +39,7 @@ import { SaveIndicator } from './components/SaveIndicator';
 import { ThemeToggle } from './components/ThemeToggle';
 import { SubModeView } from './components/SubModeView';
 import { StudentDetailsPanel } from './components/StudentDetailsPanel';
-import { AdjacencyBanner } from './components/AdjacencyBanner';
+import { ImpossibleConstraintsModal } from './components/ImpossibleConstraintsModal';
 import { applyTheme, getInitialTheme, getStoredTheme, storeTheme, type Theme } from './theme';
 
 const AUTOSAVE_DEBOUNCE_MS = 500;
@@ -63,8 +62,11 @@ export default function App() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   /** Private view hides all flag data; resets on page reload. */
   const [privateView, setPrivateView] = useState(false);
-  /** Key of violations the teacher has dismissed this session. */
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+
+  // ── v4: layout snapshot taken on entering edit mode (transient, §3.4) ──
+  const [layoutSnapshot, setLayoutSnapshot] = useState<Layout | null>(null);
+  /** Shown when constraint-aware shuffle finds no valid arrangement (§4.7). */
+  const [showImpossible, setShowImpossible] = useState(false);
 
   const [theme, setTheme] = useState<Theme>(() => {
     const t = getInitialTheme();
@@ -148,22 +150,15 @@ export default function App() {
     if (!isSeated) setSelectedStudentId(null);
   }, [period, selectedStudentId]);
 
-  // ── Adjacency violations ───────────────────────────────────────────────
-  const violations = useMemo(() => {
-    if (!period) return [];
-    return findAdjacentViolations(period);
-  }, [period]);
-
-  const currentViolationKey = violations.length > 0 ? violationKey(violations) : null;
   const viewMode = state.viewMode ?? 'editor';
   const photosEnabled = state.photosEnabled ?? true;
   const isSubMode = viewMode === 'sub';
 
-  const showBanner =
-    !isSubMode &&
-    !privateView &&
-    violations.length > 0 &&
-    currentViolationKey !== dismissedKey;
+  // ── v4: revert availability (live layout differs from edit-entry snapshot) ─
+  const canRevert = useMemo(() => {
+    if (!editMode || !layoutSnapshot || !period) return false;
+    return !layoutsEqual(period.layout, layoutSnapshot);
+  }, [editMode, layoutSnapshot, period]);
 
   // ── Helpers ────────────────────────────────────────────────────────────
   function mutatePeriod(mut: (p: Period) => Period) {
@@ -171,11 +166,42 @@ export default function App() {
     setState((s) => updatePeriod(s, period.id, mut));
   }
 
+  // ── v4: edit-mode entry/exit manages the layout snapshot ────────────────
+  function exitEditMode() {
+    setEditMode(false);
+    setLayoutSnapshot(null);
+  }
+
+  function handleToggleEdit() {
+    setEditMode((prev) => {
+      const next = !prev;
+      // Snapshot on entry; discard on exit (§3.4).
+      setLayoutSnapshot(next && period ? deepCopyLayout(period.layout) : null);
+      return next;
+    });
+    setSelectedStudentId(null);
+  }
+
+  function handleRevertLayout() {
+    if (!period || !layoutSnapshot) return;
+    const snapshot = layoutSnapshot;
+    const snapSeatIds = new Set(snapshot.seats.map((s) => s.id));
+    mutatePeriod((p) => {
+      // Drop assignments to seats that were added during this edit session;
+      // they vanish on revert. Seats removed during the session reappear empty.
+      const assignments: Record<string, string> = {};
+      for (const [seatId, studentId] of Object.entries(p.assignments)) {
+        if (snapSeatIds.has(seatId)) assignments[seatId] = studentId;
+      }
+      return { ...p, layout: deepCopyLayout(snapshot), assignments };
+    });
+  }
+
   // ── View mode ──────────────────────────────────────────────────────────
   function handleSetViewMode(mode: 'editor' | 'sub') {
     setState((s) => ({ ...s, viewMode: mode }));
     if (mode === 'sub') {
-      setEditMode(false);
+      exitEditMode();
       setSelectedStudentId(null);
     }
   }
@@ -221,8 +247,6 @@ export default function App() {
       ...p,
       pairFlags: [...(p.pairFlags ?? []), { studentA: a, studentB: b }],
     }));
-    // Reset dismissed key so banner re-evaluates
-    setDismissedKey(null);
   }
 
   function handleRemovePairFlag(idA: string, idB: string) {
@@ -293,8 +317,6 @@ export default function App() {
         });
         return { ...p, layout: { ...p.layout, seats } };
       });
-      // Reset dismissed key — seat moved, violations may change
-      setDismissedKey(null);
       return;
     }
 
@@ -314,7 +336,6 @@ export default function App() {
           delete next[sourceSeatId];
           return { ...p, assignments: next };
         });
-        setDismissedKey(null);
         return;
       }
 
@@ -334,7 +355,6 @@ export default function App() {
           }
           return { ...p, assignments: next };
         });
-        setDismissedKey(null);
         return;
       }
     }
@@ -343,15 +363,14 @@ export default function App() {
   // ── Period management ─────────────────────────────────────────────────
   function handleSelectPeriod(id: string) {
     setState((s) => ({ ...s, activePeriodId: id }));
-    setEditMode(false);
+    exitEditMode();
     setSelectedStudentId(null);
-    setDismissedKey(null);
   }
 
   function handleCreatePeriod(name: string) {
     const p = newPeriod(name, 'rows');
     setState((s) => ({ ...s, periods: [...s.periods, p], activePeriodId: p.id }));
-    setEditMode(false);
+    exitEditMode();
     setSelectedStudentId(null);
   }
 
@@ -412,25 +431,25 @@ export default function App() {
 
   function handleShuffle() {
     if (!period || period.roster.length === 0 || period.layout.seats.length === 0) return;
-    mutatePeriod((p) => ({
-      ...p,
-      undoSnapshot: p.assignments,
-      assignments: shuffleAssignments(p),
-    }));
-    setDismissedKey(null);
+    // Constraint-aware: silently re-rolls / backtracks until a valid arrangement
+    // is found. Returns null only when none exists (§4.7).
+    const next = shuffleWithConstraints(period);
+    if (next === null) {
+      setShowImpossible(true);
+      return; // chart unchanged
+    }
+    mutatePeriod((p) => ({ ...p, undoSnapshot: p.assignments, assignments: next }));
   }
 
   function handleReset() {
     if (!period) return;
     if (Object.keys(period.assignments).length === 0) return;
     mutatePeriod((p) => ({ ...p, undoSnapshot: p.assignments, assignments: {} }));
-    setDismissedKey(null);
   }
 
   function handleUndo() {
     if (!period || !period.undoSnapshot) return;
     mutatePeriod((p) => ({ ...p, assignments: p.undoSnapshot ?? {}, undoSnapshot: null }));
-    setDismissedKey(null);
   }
 
   function handleApplyPreset(key: PresetKey) {
@@ -438,16 +457,16 @@ export default function App() {
     const preset = PRESETS.find((p) => p.key === key);
     if (!preset) return;
     mutatePeriod((p) => ({ ...p, layout: preset.build(), assignments: {}, undoSnapshot: null }));
-    setDismissedKey(null);
   }
 
   function handleAddSeat() {
     if (!period) return;
     mutatePeriod((p) => {
-      const newSeat = {
+      const newSeat: Seat = {
         id: genId('seat'),
         x: clampAndSnap(CANVAS_WIDTH / 2 - SEAT_WIDTH / 2 + (p.layout.seats.length % 6) * 12, CANVAS_WIDTH - SEAT_WIDTH),
         y: clampAndSnap(CANVAS_HEIGHT / 2 - SEAT_HEIGHT / 2 + (p.layout.seats.length % 6) * 12, CANVAS_HEIGHT - SEAT_HEIGHT),
+        rotation: 0,
       };
       return { ...p, layout: { ...p.layout, seats: [...p.layout.seats, newSeat] } };
     });
@@ -461,7 +480,16 @@ export default function App() {
       delete next[seatId];
       return { ...p, layout: { ...p.layout, seats }, assignments: next };
     });
-    setDismissedKey(null);
+  }
+
+  function handleRotateSeat(seatId: string) {
+    if (!period) return;
+    mutatePeriod((p) => {
+      const seats = p.layout.seats.map((s) =>
+        s.id === seatId ? { ...s, rotation: (((s.rotation + 90) % 360) as Seat['rotation']) } : s,
+      );
+      return { ...p, layout: { ...p.layout, seats } };
+    });
   }
 
   function handleRotateFront() {
@@ -573,15 +601,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* ── Adjacency warning banner ────────────────────────────────── */}
-        {showBanner && (
-          <AdjacencyBanner
-            violations={violations}
-            studentById={studentById}
-            onDismiss={() => setDismissedKey(currentViolationKey)}
-          />
-        )}
-
         {/* Editor chrome */}
         {!isSubMode && (
           <>
@@ -595,7 +614,7 @@ export default function App() {
             />
             <Toolbar
               editMode={editMode}
-              onToggleEdit={() => { setEditMode((v) => !v); setSelectedStudentId(null); }}
+              onToggleEdit={handleToggleEdit}
               onShuffle={handleShuffle}
               onReset={handleReset}
               onUndo={handleUndo}
@@ -635,8 +654,11 @@ export default function App() {
                 roomNumber={period.roomNumber ?? ''}
                 subNotes={period.subNotes ?? ''}
                 onRemoveSeat={handleRemoveSeat}
+                onRotateSeat={handleRotateSeat}
                 onAddSeat={handleAddSeat}
                 onRotateFront={handleRotateFront}
+                onRevertLayout={handleRevertLayout}
+                canRevert={canRevert}
                 onPhotoUpload={handlePhotoUpload}
                 onPhotoRemove={handlePhotoRemove}
                 onUpdateSubNotes={handleUpdateSubNotes}
@@ -666,9 +688,17 @@ export default function App() {
         {importing && (
           <RosterImportModal
             initialStudents={period.roster}
+            roster={period.roster}
+            pairFlags={period.pairFlags ?? []}
+            onAddPairFlag={handleAddPairFlag}
+            onRemovePairFlag={handleRemovePairFlag}
             onCancel={() => setImporting(false)}
             onSave={handleSaveRoster}
           />
+        )}
+
+        {showImpossible && (
+          <ImpossibleConstraintsModal onClose={() => setShowImpossible(false)} />
         )}
       </div>
 
@@ -684,4 +714,22 @@ export default function App() {
 function clampAndSnap(value: number, max: number): number {
   const snapped = Math.round(value / GRID_SNAP) * GRID_SNAP;
   return Math.max(0, Math.min(max, snapped));
+}
+
+/** Deep copy of a layout for the edit-mode revert snapshot (§3.4). */
+function deepCopyLayout(layout: Layout): Layout {
+  return { frontOfRoom: layout.frontOfRoom, seats: layout.seats.map((s) => ({ ...s })) };
+}
+
+/** Structural equality of two layouts (seats compared by position + rotation). */
+function layoutsEqual(a: Layout, b: Layout): boolean {
+  if (a.frontOfRoom !== b.frontOfRoom) return false;
+  if (a.seats.length !== b.seats.length) return false;
+  const bById = new Map(b.seats.map((s) => [s.id, s]));
+  for (const seat of a.seats) {
+    const other = bById.get(seat.id);
+    if (!other) return false;
+    if (other.x !== seat.x || other.y !== seat.y || other.rotation !== seat.rotation) return false;
+  }
+  return true;
 }

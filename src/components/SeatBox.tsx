@@ -1,6 +1,6 @@
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type { CSSProperties } from 'react';
-import type { Seat, Student } from '../types';
+import type { Orientation, Seat, Student } from '../types';
 import { SEAT_WIDTH, SEAT_HEIGHT } from '../layouts';
 import { ACCOMMODATION_CONFIG, ACCOMMODATION_ORDER } from '../accommodations';
 import { StudentCard } from './StudentCard';
@@ -14,12 +14,20 @@ interface Props {
   /** When true, accommodation dots and other private data are hidden. */
   privateView: boolean;
   isSelected: boolean;
+  /** Direction the room's front faces — the baseline for seat rotation. */
+  frontOfRoom: Orientation;
   onRemoveSeat: (seatId: string) => void;
+  onRotateSeat: (seatId: string) => void;
   onPhotoUpload: (studentId: string, dataUrl: string) => void;
   onPhotoRemove: (studentId: string) => void;
   onSelectStudent: (studentId: string) => void;
   onDeselectStudent: () => void;
 }
+
+/** Clockwise screen directions, used to map rotation onto the facing edge. */
+const DIR_ORDER: Orientation[] = ['top', 'right', 'bottom', 'left'];
+/** Rotation → label relative to the room's front (PRD v4 §2.4 aria-label). */
+const FACING_LABEL: Record<number, string> = { 0: 'front', 90: 'right', 180: 'back', 270: 'left' };
 
 export function SeatBox({
   seat,
@@ -28,12 +36,17 @@ export function SeatBox({
   photosEnabled,
   privateView,
   isSelected,
+  frontOfRoom,
   onRemoveSeat,
+  onRotateSeat,
   onPhotoUpload,
   onPhotoRemove,
   onSelectStudent,
   onDeselectStudent,
 }: Props) {
+  // Screen edge the student faces = room front rotated clockwise by `rotation`.
+  const facing = DIR_ORDER[(DIR_ORDER.indexOf(frontOfRoom) + seat.rotation / 90) % 4];
+  const facingLabel = FACING_LABEL[seat.rotation];
   const { isOver, setNodeRef: dropRef } = useDroppable({
     id: `seat:${seat.id}`,
     data: { type: 'seat', seatId: seat.id },
@@ -69,6 +82,7 @@ export function SeatBox({
 
   const className = [
     'seat',
+    `seat--front-${facing}`,
     isOver && 'seat--over',
     occupant && 'seat--filled',
     editMode && 'seat--editable',
@@ -111,6 +125,11 @@ export function SeatBox({
             : 'Empty seat. Drop a student here.'
       }
     >
+      {/* Front-edge direction marker — visible in and out of edit mode */}
+      <span className={`seat__facing seat__facing--${facing}`} aria-hidden="true">
+        ▲
+      </span>
+
       {/* Accommodation dots — top-right corner */}
       {dots.length > 0 && (
         <div className="seat__dots" aria-hidden="true">
@@ -126,19 +145,34 @@ export function SeatBox({
       )}
 
       {editMode && (
-        <button
-          type="button"
-          className="seat__remove"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemoveSeat(seat.id);
-          }}
-          aria-label="Remove seat"
-          title="Remove seat"
-        >
-          ×
-        </button>
+        <>
+          <button
+            type="button"
+            className="seat__rotate"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRotateSeat(seat.id);
+            }}
+            aria-label={`Rotate seat (currently facing ${facingLabel})`}
+            title={`Rotate seat (currently facing ${facingLabel})`}
+          >
+            ↻
+          </button>
+          <button
+            type="button"
+            className="seat__remove"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemoveSeat(seat.id);
+            }}
+            aria-label="Remove seat"
+            title="Remove seat"
+          >
+            ×
+          </button>
+        </>
       )}
 
       {!editMode && occupant && (

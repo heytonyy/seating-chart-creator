@@ -1,9 +1,14 @@
 export type Orientation = 'top' | 'bottom' | 'left' | 'right';
 
+/** Rotation in degrees clockwise from "facing the room's front". */
+export type Rotation = 0 | 90 | 180 | 270;
+
 export interface Seat {
   id: string;
   x: number;
   y: number;
+  /** Direction the seated student faces, clockwise from the room's front. */
+  rotation: Rotation;
 }
 
 export interface Layout {
